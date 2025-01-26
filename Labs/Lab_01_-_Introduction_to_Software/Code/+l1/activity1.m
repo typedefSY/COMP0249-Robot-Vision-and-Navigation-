@@ -16,7 +16,7 @@ simulator.start();
 fig = FigureManager.getFigure("Simulator Output");
 clf
 hold on
-axis([-10 10 -10 10])
+axis([-100 100 -100 100])
 axis square
 
 % Set up the view which show the output of the simulator and start it
@@ -35,3 +35,23 @@ while (simulator.keepRunning()  == true)
 end
 
 [TSimulator, XTrueHistory] = simulator.history();
+
+xPositions = XTrueHistory(1, :);
+yPositions = XTrueHistory(3, :);
+xVelocities = XTrueHistory(2, :);
+yVelocities = XTrueHistory(4, :);
+
+xMin = min(xPositions);
+xMax = max(xPositions);
+yMin = min(yPositions);
+yMax = max(yPositions);
+maxVelocity = max(sqrt(xVelocities.^2 + yVelocities.^2));
+
+% Plot the trajectory of the robot
+plot(xPositions, yPositions, 'b-')
+
+disp(['maxVelocity: ', num2str(maxVelocity)]);
+disp(['xMin: ', num2str(xMin)]);
+disp(['xMax: ', num2str(xMax)]);
+disp(['yMin: ', num2str(yMin)]);
+disp(['yMax: ', num2str(yMax)]);
