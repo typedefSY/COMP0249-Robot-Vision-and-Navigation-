@@ -35,7 +35,7 @@ classdef SLAMSystem < ebe.slam.SLAMSystem
             obj@ebe.slam.SLAMSystem(config);
 
             % Set up the discrete time system for prediction
-            obj.systemModel = l2.dotbot.SystemModel(config);
+            obj.systemModel = l2s.dotbot.SystemModel(config);
 
 
             obj.muckUp = false;
@@ -55,8 +55,8 @@ classdef SLAMSystem < ebe.slam.SLAMSystem
         function success = start(obj)
             start@ebe.slam.SLAMSystem(obj);
             obj.timeStore = [];
-            obj.xStore = zeros(l2.dotbot.SystemModel.NP, 0);
-            obj.PStore = zeros(l2.dotbot.SystemModel.NP, 0);
+            obj.xStore = zeros(l2s.dotbot.SystemModel.NP, 0);
+            obj.PStore = zeros(l2s.dotbot.SystemModel.NP, 0);
 
             % Set the dictionary which maps landmark ID to coefficient in
             % the state estimate.
@@ -72,8 +72,8 @@ classdef SLAMSystem < ebe.slam.SLAMSystem
 
         % Return the current platform estimate
         function [x,P] = platformEstimate(obj)
-            x = obj.x(1:l2.dotbot.SystemModel.NP);
-            P = obj.P(1:l2.dotbot.SystemModel.NP, 1:l2.dotbot.SystemModel.NP);
+            x = obj.x(1:l2s.dotbot.SystemModel.NP);
+            P = obj.P(1:l2s.dotbot.SystemModel.NP, 1:l2s.dotbot.SystemModel.NP);
         end
         
         function [T, X, PX] = platformEstimateHistory(obj)
@@ -88,13 +88,13 @@ classdef SLAMSystem < ebe.slam.SLAMSystem
 
             numberOfLandmarks = numel(landmarkIds);
            
-            x = NaN(l2.dotbot.SystemModel.NL, numberOfLandmarks);
-            P = NaN(l2.dotbot.SystemModel.NL, l2.dotbot.SystemModel.NL, numberOfLandmarks);
+            x = NaN(l2s.dotbot.SystemModel.NL, numberOfLandmarks);
+            P = NaN(l2s.dotbot.SystemModel.NL, l2s.dotbot.SystemModel.NL, numberOfLandmarks);
             
             for l = 1 : numberOfLandmarks
                 landmarkId = landmarkIds(l);
                 offset = lookup(obj.landmarkIDStateVectorMap, landmarkId);
-                idx = offset + [1;2];
+                idx = offset + (1:l2s.dotbot.SystemModel.NL);
                 x(:, l) = obj.x(idx);
                 P(:, :, l) = obj.P(idx, idx);
             end
@@ -128,7 +128,7 @@ classdef SLAMSystem < ebe.slam.SLAMSystem
 
         function success = handlePredictForwards(obj, dT)
 
-            NP = l2.dotbot.SystemModel.NP;
+            NP = l2s.dotbot.SystemModel.NP;
 
             [obj.x(1:NP), FXd, QXd] = obj.systemModel.predictState(obj.x(1:NP), obj.u, dT);
 
@@ -161,11 +161,11 @@ classdef SLAMSystem < ebe.slam.SLAMSystem
         end
 
         function success = handleGPSObservationEvent(obj, event)
-            [zPred, Hx, R] = obj.systemModel.predictGPSObservation(obj.x(1:l2.dotbot.SystemModel.NP));
+            [zPred, Hx, R] = obj.systemModel.predictGPSObservation(obj.x(1:2));
 
             % Expand to the full state
             HS = zeros(2, numel(obj.x));
-            HS(:, 1:l2.dotbot.SystemModel.NP) = Hx;
+            HS(:, 1:l2s.dotbot.SystemModel.NP) = Hx;
 
             % Kalman Filter Update
             nu = event.data - zPred;
@@ -185,11 +185,11 @@ classdef SLAMSystem < ebe.slam.SLAMSystem
             % Update each measurement separately
             for s = 1 : numel(event.info)
                 sensor = obj.map.sensors.bearing.sensors(event.info(s));
-                [zPred, Hx, R] = obj.systemModel.predictBearingObservation(x(1:l2.dotbot.SystemModel.NP), sensor.position, sensor.orientation);
+                [zPred, Hx, R] = obj.systemModel.predictBearingObservation(x(1:2), sensor.position, sensor.orientation);
 
                 % Expand to full state
                 HS = zeros(1, numel(obj.x));
-                HS(:, 1:l2.dotbot.SystemModel.NP) = Hx;
+                HS(:, 1:l2s.dotbot.SystemModel.NP) = Hx;
                 
                 % Kalman Filter Update
                 nu = event.data(s) - zPred;
@@ -210,8 +210,8 @@ classdef SLAMSystem < ebe.slam.SLAMSystem
             assert(obj.stepNumber == event.eventGeneratorStepNumber)
 
             % Store useful values
-            NL = l2.dotbot.SystemModel.NL;
-            NP = l2.dotbot.SystemModel.NP;
+            NL = l2s.dotbot.SystemModel.NL;
+            NP = l2s.dotbot.SystemModel.NP;
 
             % Get the list of landmarks we know about
             knownLandmarkIDs = obj.landmarkIDStateVectorMap.keys();
@@ -229,9 +229,6 @@ classdef SLAMSystem < ebe.slam.SLAMSystem
                 offset = lookup(obj.landmarkIDStateVectorMap, existingLandmarks(o));
                 landmarkIdx = offset + (1:NL);
 
-                % Call the observation model; this returns the predicted
-                % observations together with the H matrices for the
-                % platform and the landmark
                 [zPred, Hx, Hm, ~] = ...
                     obj.systemModel.predictSLAMObservation(obj.x(1:NP), ...
                     obj.x(landmarkIdx));
@@ -241,9 +238,18 @@ classdef SLAMSystem < ebe.slam.SLAMSystem
                 % Create the SLAM system observation matrix HS which
                 % has to be of the right size and composition to update the
                 % landmark and platform.
+                HS = zeros(2, numel(obj.x));
+                HS(:, 1:NP) = Hx;
+                HS(:, landmarkIdx) = Hm;
 
                 % Use HS to implement the Kalman filter update for the SLAM
                 % system
+                C = obj.P * HS';
+                S = HS * C + event.covariance();
+                nu = event.data(:, idx(o)) - zPred;
+                K = C / S;
+                obj.x = obj.x + K * nu;
+                obj.P = obj.P - K * S * K';
             end
 
             % The remaining observations are of new landmarks
@@ -260,9 +266,9 @@ classdef SLAMSystem < ebe.slam.SLAMSystem
                 % Note that landmarkIdx is the index in the state vector
                 % where the new landmark will be inserted.
 
-                %offset = length(obj.x);
-                %landmarkIdx = offset + (1:l2.dotbot.SystemModel.NL);
-                %obj.landmarkIDStateVectorMap = insert(obj.landmarkIDStateVectorMap, newLandmarks(o), offset);
+                offset = length(obj.x);
+                landmarkIdx = offset + (1:NL);
+                obj.landmarkIDStateVectorMap = insert(obj.landmarkIDStateVectorMap, newLandmarks(o), offset);
 
                 % ACTIVITY 2: Insert here the correct code to compute the J
                 % and K matrices needed to augment the state with the
@@ -270,13 +276,20 @@ classdef SLAMSystem < ebe.slam.SLAMSystem
                 % and the appendix of the coursework for the appropriate
                 % expressions.
 
-                %obj.x = J * obj.x + K * event.data(:, idx(o));
-                %obj.P = J * obj.P * J' + K * event.covariance() * K';
+                J = zeros(offset + NL, offset);
+                J(1:offset, 1:offset) = eye(offset);
+                J(landmarkIdx, 1:NL) = eye(NL);
+
+                K = zeros(offset + NL, NL);
+                K(landmarkIdx, 1:NL) = eye(NL);
+
+                obj.x = J * obj.x + K * event.data(:, idx(o));
+                obj.P = J * obj.P * J' + K * event.covariance() * K';
             end
 
             % ACTIVITY 4
             if (obj.muckUp == true)
-                for k = 1 : 2 : length(obj.P)
+                for k = 1 : 2: length(obj.P)
                     obj.P(k:k+1, 1:k-1) = 0;
                     obj.P(k:k+1, k+2:end) = 0;
                 end
@@ -292,9 +305,9 @@ classdef SLAMSystem < ebe.slam.SLAMSystem
         function storeStepResults(obj)
             % Store the estimate for the future
             obj.timeStore(:, obj.stepNumber + 1) = obj.currentTime;
-            obj.xStore(:, obj.stepNumber + 1) = obj.x(1:l2.dotbot.SystemModel.NP);
-            obj.PStore(:, obj.stepNumber + 1) = diag(obj.P(1:l2.dotbot.SystemModel.NP, ...
-                1:l2.dotbot.SystemModel.NP));
+            obj.xStore(:, obj.stepNumber + 1) = obj.x(1:l2s.dotbot.SystemModel.NP);
+            obj.PStore(:, obj.stepNumber + 1) = diag(obj.P(1:l2s.dotbot.SystemModel.NP, ...
+                1:l2s.dotbot.SystemModel.NP));
 
         end
     end

@@ -73,11 +73,11 @@ classdef SystemModel < handle
                 obj.cachedDT = dT;
             end
 
-            pIdx = 1:l2.dotbot.SystemModel.NP;
+            pIdx = 1:l2s.dotbot.SystemModel.NP;
             x(pIdx) = obj.FXd * x(pIdx) + obj.BXd * u;
 
             if (obj.perturbWithNoise == true)
-                x(pIdx) = x(pIdx) + obj.QXdSqrtm * randn(l2.dotbot.SystemModel.NP, 1);
+                x(pIdx) = x(pIdx) + obj.QXdSqrtm * randn(l2s.dotbot.SystemModel.NP, 1);
             end
 
             if (nargout == 3)
@@ -88,7 +88,7 @@ classdef SystemModel < handle
 
         function [z, Hx, R] = predictGPSObservation(obj, x)
 
-           z = obj.HXGPS * x(1:l2.dotbot.SystemModel.NP);
+           z = obj.HXGPS * x(1:l2s.dotbot.SystemModel.NP);
 
             if (obj.perturbWithNoise == true)
                 z = z + obj.RGPSSqrtm * randn(size(z));
@@ -114,7 +114,7 @@ classdef SystemModel < handle
 
             if (nargout == 3)
                 d = dx^2 + dy^2;
-                Hx(1:1:l2.dotbot.SystemModel.NP) = [dy/d dx/d];
+                Hx(1:1:l2s.dotbot.SystemModel.NP) = [dy/d dx/d];
                 R = obj.RBearing;
             end
         end

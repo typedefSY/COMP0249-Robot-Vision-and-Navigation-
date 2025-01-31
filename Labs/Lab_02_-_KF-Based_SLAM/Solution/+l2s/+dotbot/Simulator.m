@@ -35,8 +35,8 @@ classdef Simulator < ebe.core.EventBasedSimulator
         % Construct the object
         function obj = Simulator(config)
             obj@ebe.core.EventBasedSimulator(config);
-            obj.systemModel = l2.dotbot.SimulatorSystemModel(config, config.perturbWithNoise);
-            obj.platformController = l2.dotbot.WaypointController(obj.config);
+            obj.systemModel = l2s.dotbot.SimulatorSystemModel(config, config.perturbWithNoise);
+            obj.platformController = l2s.dotbot.WaypointController(obj.config);
         end
         
         % Get the ground truth
